@@ -1,0 +1,32 @@
+version: '3.9'
+
+services:
+  kino-ua:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runner
+    container_name: kino-ua
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - NEXT_PUBLIC_GA_MEASUREMENT_ID=${NEXT_PUBLIC_GA_MEASUREMENT_ID:-}
+      - NEXT_PUBLIC_SITE_URL=${NEXT_PUBLIC_SITE_URL:-https://kino-ua.vercel.app}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.kino-ua.rule=Host(`${DOMAIN:-localhost}`)"
+      - "traefik.http.routers.kino-ua.entrypoints=websecure"
+      - "traefik.http.routers.kino-ua.tls.certresolver=letsencrypt"
+
+networks:
+  default:
+    name: kino-ua-network
