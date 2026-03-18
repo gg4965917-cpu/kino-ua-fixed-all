@@ -1,15 +1,28 @@
 'use client';
 
+import Link from 'next/link';
+import Image from 'next/image';
 import { Film, Play, X, Clock } from 'lucide-react';
 import { useMovieStore } from '@/lib/store';
-import { moviesData } from '@/lib/movies';
+import { staticMovies, type Movie } from '@/lib/movies';
 
 export default function ContinueWatching() {
-  const { continueWatching, removeFromContinueWatching, setSelectedMovie, setIsPlaying, addToHistory } = useMovieStore();
+  const {
+    continueWatching,
+    removeFromContinueWatching,
+    setSelectedMovie,
+    setIsPlaying,
+    addToHistory,
+    allMovies,
+  } = useMovieStore();
 
   if (continueWatching.length === 0) return null;
 
-  // Sort by most recently watched
+  // Resolve movie from store (TMDB) or static fallback
+  const allAvailable: Movie[] = allMovies.length > 0 ? allMovies : staticMovies;
+  const findMovie = (id: number): Movie | undefined =>
+    allAvailable.find((m) => m.id === id) ?? staticMovies.find((m) => m.id === id);
+
   const sorted = [...continueWatching].sort((a, b) => b.timestamp - a.timestamp);
 
   return (
@@ -22,16 +35,18 @@ export default function ContinueWatching() {
             </h2>
             <div className="h-0.5 w-16 bg-gradient-to-r from-kino-yellow-400 to-kino-yellow-600 rounded-full mt-1" />
           </div>
-          <span className="text-xs text-gray-500">{sorted.length} {sorted.length === 1 ? 'фільм' : 'фільми'}</span>
+          <span className="text-xs text-gray-500">
+            {sorted.length} {sorted.length === 1 ? 'фільм' : 'фільми'}
+          </span>
         </div>
 
         <div className="flex space-x-4 overflow-x-auto pb-3 scrollbar-hide">
           {sorted.map(({ movieId, progress }) => {
-            const movie = moviesData.find(m => m.id === movieId);
+            const movie = findMovie(movieId);
             if (!movie) return null;
 
-            const minutes = Math.round((progress / 100) * parseInt(movie.duration));
-            const totalMinutes = parseInt(movie.duration);
+            const durationMins = parseInt(movie.duration) || 0;
+            const watchedMins = durationMins ? Math.round((progress / 100) * durationMins) : 0;
 
             return (
               <div
@@ -44,20 +59,34 @@ export default function ContinueWatching() {
                 }}
               >
                 {/* Poster */}
-                <div
-                  className="relative overflow-hidden rounded-xl aspect-[2/3] border border-gray-800 group-hover:border-kino-yellow-400/50 transition-all duration-300"
-                  style={{ background: movie.poster || movie.backdrop }}
-                >
+                <div className="relative overflow-hidden rounded-xl aspect-[2/3] border border-gray-800 group-hover:border-kino-yellow-400/50 transition-all duration-300">
+
+                  {/* Background gradient fallback */}
+                  <div
+                    className="absolute inset-0"
+                    style={{ background: movie.poster ?? movie.backdrop ?? 'transparent' }}
+                  />
+
+                  {/* Poster image */}
+                  {movie.posterUrl ? (
+                    <Image
+                      src={movie.posterUrl}
+                      alt={movie.title}
+                      fill
+                      sizes="(max-width: 768px) 176px, 208px"
+                      className="object-cover"
+                    />
+                  ) : (
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <Film className="w-10 h-10 text-white/10" />
+                    </div>
+                  )}
+
                   {/* Play overlay */}
                   <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
                     <div className="bg-kino-yellow-400 rounded-full p-3 transform scale-90 group-hover:scale-100 transition-transform">
                       <Play className="w-6 h-6 text-black fill-black" />
                     </div>
-                  </div>
-
-                  {/* Film icon placeholder */}
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <Film className="w-10 h-10 text-white/10" />
                   </div>
 
                   {/* Progress bar */}
@@ -89,7 +118,10 @@ export default function ContinueWatching() {
                   <div className="flex items-center justify-between text-xs text-gray-500">
                     <span className="flex items-center space-x-1">
                       <Clock className="w-3 h-3" />
-                      <span>{minutes} / {totalMinutes} хв</span>
+                      {durationMins > 0
+                        ? <span>{watchedMins} / {durationMins} хв</span>
+                        : <span>{progress}% переглянуто</span>
+                      }
                     </span>
                     <span className="text-kino-yellow-400 font-semibold">{progress}%</span>
                   </div>

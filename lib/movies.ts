@@ -7,17 +7,25 @@ export interface Movie {
   year: number;
   duration: string;
   genre: string[];
+  /** CSS gradient used as fallback when no posterUrl is available */
   backdrop?: string;
+  /** CSS gradient used as fallback when no posterUrl is available */
   poster?: string;
+  /** Full TMDB poster URL (w342) */
   posterUrl?: string;
+  /** Full TMDB backdrop URL (w1280) */
   backdropUrl?: string;
   director?: string;
   cast?: string[];
+  /** True when Ukrainian dubbing / voiceover is available */
   hasVoiceover: boolean;
   trailer?: string;
   viewCount?: number;
   isTrending?: boolean;
+  /** TMDB numeric ID — used for API calls and embed players */
   tmdbId?: number;
+  /** ISO 639-1 original language code from TMDB, e.g. "uk", "en" */
+  originalLanguage?: string;
 }
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
@@ -51,6 +59,19 @@ const GRADIENTS = [
 export function tmdbToMovie(m: any): Movie {
   const year = m.release_date ? parseInt(m.release_date.split('-')[0]) : 0;
   const g = GRADIENTS[m.id % GRADIENTS.length];
+  const originalLanguage: string = m.original_language ?? '';
+
+  // Heuristic: mark as Ukrainian voiceover for native Ukrainian films or
+  // when the TMDB record was fetched via the "ukrainian" discover endpoint.
+  // Real dubbing data requires a separate Ashdi/VideoCDN lookup.
+  const hasVoiceover = originalLanguage === 'uk';
+
+  // Map full details genres if available, fallback to genre_ids
+  const genres =
+    Array.isArray(m.genres) && m.genres.length > 0
+      ? m.genres.map((g: { name: string }) => g.name).slice(0, 3)
+      : mapGenres(m.genre_ids || []);
+
   return {
     id: m.id,
     tmdbId: m.id,
@@ -60,15 +81,19 @@ export function tmdbToMovie(m: any): Movie {
     rating: Math.round((m.vote_average || 0) * 10) / 10,
     year,
     duration: m.runtime ? `${m.runtime} хв` : '',
-    genre: mapGenres(m.genre_ids || []),
-    poster: g, backdrop: g,
+    genre: genres,
+    poster: g,
+    backdrop: g,
     posterUrl:  m.poster_path   ? `${TMDB_IMG}/w342${m.poster_path}`   : undefined,
     backdropUrl: m.backdrop_path ? `${TMDB_IMG}/w1280${m.backdrop_path}` : undefined,
-    hasVoiceover: false,
+    hasVoiceover,
     viewCount: m.popularity ? Math.round(m.popularity * 100) : 0,
     isTrending: (m.popularity || 0) > 100,
+    originalLanguage,
   };
 }
+
+// ── Client-side helpers (use only in 'use client' components with user key) ──
 
 async function tmdbGet(path: string, apiKey: string) {
   const sep = path.includes('?') ? '&' : '?';
@@ -78,6 +103,43 @@ async function tmdbGet(path: string, apiKey: string) {
     throw new Error(e.status_message || `TMDB помилка ${res.status}`);
   }
   return res.json();
+}
+
+// ── Server-side helpers (use in Server Components / API routes only) ────────
+
+/**
+ * Fetch movies via the internal Next.js API route so the TMDB key stays
+ * server-side. Safe to call from Client Components.
+ */
+export async function fetchMoviesFromAPI(
+  category: string,
+  page = 1,
+): Promise<Movie[]> {
+  const base =
+    typeof window !== 'undefined'
+      ? ''
+      : process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000';
+  const res = await fetch(
+    `${base}/api/movies?category=${encodeURIComponent(category)}&page=${page}`,
+    { next: { revalidate: 300 } },
+  );
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.results ?? [];
+}
+
+export async function searchMoviesFromAPI(query: string): Promise<Movie[]> {
+  const base =
+    typeof window !== 'undefined'
+      ? ''
+      : process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000';
+  const res = await fetch(
+    `${base}/api/movies?search=${encodeURIComponent(query)}`,
+    { cache: 'no-store' },
+  );
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.results ?? [];
 }
 
 export async function fetchPopularTMDB(apiKey: string): Promise<Movie[]> {
